@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Tiny Extension</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <div class="title"><img src="icons/icon48.png" alt="d20" class="header-icon"> Tiny Extension</div>
+    <div class="status-badge" id="status-container" title="Owlbear Rodeo Connection Status">
+      <span class="dot" id="status-dot"></span>
+      <span id="status-text">Checking...</span>
+    </div>
+  </header>
+
+  <div class="toggle-group">
+    <div class="toggle-row">
+      <div class="toggle-info">
+        <label for="toggle-bridge" class="toggle-label">Bridge Enabled</label>
+        <span class="toggle-desc">Forward 5etools rolls to Owlbear</span>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="toggle-bridge" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="toggle-card">
+      <div class="toggle-row-main">
+        <div class="toggle-info">
+          <div class="toggle-label-wrap">
+            <label for="toggle-show-creature" class="toggle-label">Show Creature Name</label>
+            <button type="button" id="btn-expand-action" class="expand-btn" aria-expanded="false" title="Show/hide Action Name option">▸</button>
+          </div>
+          <span class="toggle-desc">Off = display as 'DM' to players</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="toggle-show-creature">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="toggle-subrow collapsed" id="subrow-show-action">
+        <div class="toggle-info">
+          <label for="toggle-show-action" class="toggle-label">Show Action Name</label>
+          <span class="toggle-desc">Off = mask as 'Attack', 'Check', etc.</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="toggle-show-action">
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="toggle-row">
+      <div class="toggle-info">
+        <label for="toggle-send-descriptions" class="toggle-label">Send Descriptions</label>
+        <span class="toggle-desc">Include attack effects &amp; conditions</span>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="toggle-send-descriptions" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="toggle-row">
+      <div class="toggle-info">
+        <label for="toggle-auto-roll-damage" class="toggle-label">Auto-Roll Damage</label>
+        <span class="toggle-desc">Combine Attack + Damage in one card</span>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="toggle-auto-roll-damage" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

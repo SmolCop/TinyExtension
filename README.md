@@ -36,7 +36,3 @@ There are 4 main helpers working behind the scenes:
 2. Turn ON **Developer mode**.
 3. Click **Load unpacked**.
 4. Select the extracted extension folder—and you're ready to roll!
-
-### Firefox (121+)
-- **Signed Release:** Drag and drop the signed `.xpi` file from **GitHub Releases** directly onto a Firefox window and click **Add**.
-- **Temporary Local Load:** Open **`about:debugging`** → **This Firefox** → **Load Temporary Add-on** → select **`manifest.json`** from the extension folder.

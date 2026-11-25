@@ -101,42 +101,86 @@ function resolveObrTabsAndTarget(callback) {
   });
 }
 
-function setBadge(text, color) {
-  if (!chrome.action || !chrome.action.setBadgeText) return;
-  chrome.action.setBadgeText({ text: text });
-  if (text && color && chrome.action.setBadgeBackgroundColor) {
-    chrome.action.setBadgeBackgroundColor({ color: color });
-  }
-  if (text && chrome.action.setBadgeTextColor) {
-    chrome.action.setBadgeTextColor({ color: '#ffffff' });
+let cachedGrayscaleImageData = null;
+
+async function getGrayscaleImageData() {
+  if (cachedGrayscaleImageData) return cachedGrayscaleImageData;
+  try {
+    const url = chrome.runtime.getURL('icons/icon48.png');
+    const resp = await fetch(url);
+    const blob = await resp.blob();
+    const bitmap = await createImageBitmap(blob);
+    const canvas = new OffscreenCanvas(48, 48);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0, 48, 48);
+    const imgData = ctx.getImageData(0, 0, 48, 48);
+    const d = imgData.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const lum = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
+      d[i] = lum;
+      d[i + 1] = lum;
+      d[i + 2] = lum;
+      d[i + 3] = Math.round(d[i + 3] * 0.55);
+    }
+    cachedGrayscaleImageData = imgData;
+    return imgData;
+  } catch (err) {
+    log('Could not build grayscale icon:', err);
+    return null;
   }
 }
 
-function updateBadgeFromState(bridgeEnabled, targetTab, tabs) {
+async function setToolbarState(isActive, titleText) {
+  if (!chrome.action) return;
+  if (chrome.action.setBadgeText) {
+    chrome.action.setBadgeText({ text: '' });
+  }
+  if (chrome.action.setTitle) {
+    chrome.action.setTitle({ title: titleText });
+  }
+  if (!chrome.action.setIcon) return;
+
+  if (isActive) {
+    chrome.action.setIcon({
+      path: {
+        16: 'icons/icon16.png',
+        48: 'icons/icon48.png',
+        128: 'icons/icon128.png'
+      }
+    });
+  } else {
+    const grayImageData = await getGrayscaleImageData();
+    if (grayImageData) {
+      chrome.action.setIcon({ imageData: { 48: grayImageData } });
+    }
+  }
+}
+
+function updateIconFromState(bridgeEnabled, targetTab, tabs) {
   if (!bridgeEnabled) {
-    setBadge('OFF', '#6b7280');
+    setToolbarState(false, 'Tiny Extension — Paused');
     return;
   }
   if (!tabs || tabs.length === 0) {
-    setBadge('', '');
+    setToolbarState(false, 'Tiny Extension — No Owlbear Tab');
     return;
   }
   const isGm = targetTab ? Boolean(targetTab.isGm) : tabs.some((t) => t.isGm);
   if (isGm) {
-    setBadge('GM', '#16a34a');
+    setToolbarState(true, 'Tiny Extension — Ready (GM)');
   } else {
-    setBadge('PLR', '#d97706');
+    setToolbarState(false, 'Tiny Extension — Player Mode (GM Only)');
   }
 }
 
-function updateBadge() {
+function updateIconState() {
   chrome.storage.local.get({ bridgeEnabled: true }, (settings) => {
     if (!settings.bridgeEnabled) {
-      setBadge('OFF', '#6b7280');
+      setToolbarState(false, 'Tiny Extension — Paused');
       return;
     }
     resolveObrTabsAndTarget(({ tabs, targetTab }) => {
-      updateBadgeFromState(true, targetTab, tabs);
+      updateIconFromState(true, targetTab, tabs);
     });
   });
 }
@@ -235,7 +279,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'CHECK_OBR_TAB') {
     chrome.storage.local.get({ bridgeEnabled: true }, (settings) => {
       resolveObrTabsAndTarget(({ tabs, targetObrTabId, targetTab }) => {
-        updateBadgeFromState(Boolean(settings.bridgeEnabled), targetTab, tabs);
+        updateIconFromState(Boolean(settings.bridgeEnabled), targetTab, tabs);
         const anyGm = targetTab ? Boolean(targetTab.isGm) : tabs.some((t) => t.isGm);
         sendResponse({
           hasObrTab: tabs.length > 0,
@@ -252,7 +296,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'SET_TARGET_OBR_TAB') {
     const nextTabId = Number(message.tabId) || null;
     setTargetObrTabId(nextTabId, () => {
-      updateBadge();
+      updateIconState();
       sendResponse({ success: true, targetObrTabId: nextTabId });
     });
     return true;
@@ -436,37 +480,37 @@ function queryOwlbearTabs(callback) {
   });
 }
 
-// Badge & lifecycle listeners
+// Icon state & lifecycle listeners
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === 'local' && changes.bridgeEnabled) {
-    updateBadge();
+    updateIconState();
   }
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if ((changeInfo.status === 'complete' || changeInfo.url) && tab && isOwlbearUrl(tab.url)) {
-    updateBadge();
+    updateIconState();
   }
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   getTargetObrTabId((savedId) => {
     if (savedId === tabId) {
-      setTargetObrTabId(null, () => updateBadge());
+      setTargetObrTabId(null, () => updateIconState());
     } else {
-      updateBadge();
+      updateIconState();
     }
   });
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  updateBadge();
+  updateIconState();
   syncCustomMirrorsOnStartup();
 });
 
 chrome.runtime.onInstalled.addListener(() => {
-  updateBadge();
+  updateIconState();
   syncCustomMirrorsOnStartup();
 });
 
-updateBadge();
+updateIconState();

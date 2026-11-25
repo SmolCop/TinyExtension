@@ -108,7 +108,7 @@ if (toggleAutoRollDamage) {
   });
 }
 
-// Target Room selector (visible when 2+ OBR tabs are open)
+// Active Table selector (visible when 2+ OBR tabs are open)
 function renderTargetRoomSelector(tabs, targetObrTabId) {
   if (!targetRoomRow || !selectTargetRoom) return;
   if (!Array.isArray(tabs) || tabs.length < 2) {
@@ -121,9 +121,8 @@ function renderTargetRoomSelector(tabs, targetObrTabId) {
   tabs.forEach((tab) => {
     const opt = document.createElement('option');
     opt.value = String(tab.id);
-    const roleLabel = tab.isGm ? 'GM' : 'Player';
-    const cleanTitle = (tab.title || `Tab ${tab.id}`).replace(/\s*-\s*Owlbear Rodeo$/i, '').trim();
-    opt.textContent = `${cleanTitle} (${roleLabel})`;
+    const roomName = tab.roomName || 'Owlbear Room';
+    opt.textContent = tab.isGm ? roomName : `${roomName} (Player)`;
     if (tab.id === targetObrTabId) {
       opt.selected = true;
     }
@@ -154,10 +153,10 @@ function checkConnection() {
 
     if (response && response.hasObrTab && response.isGm) {
       if (statusDot) statusDot.className = 'dot connected';
-      if (statusText) statusText.textContent = 'Owlbear Ready (GM)';
+      if (statusText) statusText.textContent = 'GM Mode';
     } else if (response && response.hasObrTab) {
       if (statusDot) statusDot.className = 'dot warning';
-      if (statusText) statusText.textContent = 'Player Mode (GM Only)';
+      if (statusText) statusText.textContent = 'Player Mode';
     } else {
       if (statusDot) statusDot.className = 'dot disconnected';
       if (statusText) statusText.textContent = 'No Owlbear Tab';

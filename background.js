@@ -271,6 +271,28 @@ function getGenericActionName(roll) {
   return 'Roll';
 }
 
+function extractObrRoomName(tab) {
+  if (tab && tab.url) {
+    try {
+      const parsed = new URL(tab.url);
+      const match = parsed.pathname.match(/^\/room\/[^/]+\/([^/]+)/i);
+      if (match && match[1]) {
+        const decoded = decodeURIComponent(match[1]).trim();
+        if (decoded) return decoded;
+      }
+    } catch (e) {}
+  }
+
+  const cleaned = String((tab && tab.title) || '')
+    .replace(/\s*[-|]\s*Owlbear Rodeo\s*$/i, '')
+    .trim();
+
+  if (!cleaned || /^Owlbear Rodeo$/i.test(cleaned)) {
+    return 'Owlbear Room';
+  }
+  return cleaned;
+}
+
 // Listen for messages from popup.js or content-5etools.js
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const senderInfo = sender.tab ? `tab ${sender.tab.id} (${sender.tab.url})` : 'popup';
@@ -285,8 +307,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           hasObrTab: tabs.length > 0,
           count: tabs.length,
           isGm: anyGm,
-          tabs: tabs.map((t) => ({ id: t.id, title: t.title, isGm: t.isGm })),
-          targetObrTabId: targetObrTabId
+          targetObrTabId: targetObrTabId,
+          tabs: tabs.map((t) => ({
+            id: t.id,
+            roomName: extractObrRoomName(t),
+            isGm: t.isGm
+          }))
         });
       });
     });

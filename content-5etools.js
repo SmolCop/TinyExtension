@@ -850,12 +850,14 @@ function parseRollItem(item) {
   const isAdvantage = formula.includes('dl1') || formula.includes('kh1');
   const isDisadvantage = formula.includes('dh1') || formula.includes('kl1');
   const isD20 = formula.includes('d20') || (/^\s*d20/i).test(formula);
-  const isRecharge = /\brecharge\b/i.test(rawLabel) || /\brecharge\b/i.test(rawTitle) || Boolean(cachedClick && cachedClick.isRecharge);
 
   const hasDamageType = DAMAGE_TYPE_REGEX.test(rawLabel) ||
     DAMAGE_TYPE_REGEX.test(rawTitle) ||
     DAMAGE_TYPE_REGEX.test(formula) ||
     Boolean(cachedClick && cachedClick.damageType);
+
+  const isRecharge = Boolean(cachedClick && cachedClick.isRecharge) ||
+    (!hasDamageType && !/damage/i.test(rawLabel) && /^\s*1?d6\s*$/i.test(formula) && (/\brecharge\b/i.test(rawLabel) || /\brecharge\b/i.test(rawTitle)));
 
   let isDamage = !isD20 && !isRecharge && (
     /damage/i.test(rawLabel) ||
@@ -970,13 +972,44 @@ function parseRollItem(item) {
 
   const parts = parseRollParts(formula, breakdownSpan, breakdownText, diceRolls);
 
-  // Determine crit/fumble from the actual kept d20 die value (not modified total)
-  const isCritFinal = isD20
-    ? diceRolls.some(d => !d.isDiscarded && (d.isCrit || d.dieVal === 20))
-    : isCritOverall;
-  const isFumbleFinal = isD20
-    ? diceRolls.some(d => !d.isDiscarded && (d.isFumble || d.dieVal === 1))
-    : isFumbleOverall;
+  if (isRecharge) {
+    parts.forEach((part) => {
+      if (part.type === 'dice' && Array.isArray(part.rolls)) {
+        part.rolls.forEach((r) => {
+          r.critical = false;
+          r.critical_failure = false;
+        });
+      }
+    });
+    diceRolls.forEach((d) => {
+      d.isCrit = false;
+      d.isFumble = false;
+    });
+  }
+
+  // Compute rechargeSuccess when isRecharge is true
+  let rechargeSuccess;
+  if (isRecharge) {
+    const itemText = item.textContent || '';
+    if (/\bdid not recharge\b/i.test(itemText)) {
+      rechargeSuccess = false;
+    } else if (/\brecharged\b/i.test(itemText)) {
+      rechargeSuccess = true;
+    } else {
+      const targetMatch = (rawTitle || rawLabel).match(/recharge\s*(\d+)/i);
+      if (targetMatch && typeof total === 'number') {
+        rechargeSuccess = total >= parseInt(targetMatch[1], 10);
+      }
+    }
+  }
+
+  // Determine crit/fumble from the actual kept d20 die value (never crit/fumble on Recharge rolls)
+  const isCritFinal = isRecharge
+    ? false
+    : (isD20 ? diceRolls.some(d => !d.isDiscarded && (d.isCrit || d.dieVal === 20)) : isCritOverall);
+  const isFumbleFinal = isRecharge
+    ? false
+    : (isD20 ? diceRolls.some(d => !d.isDiscarded && (d.isFumble || d.dieVal === 1)) : isFumbleOverall);
 
   return {
     character: character,
@@ -992,6 +1025,7 @@ function parseRollItem(item) {
     isDisadvantage: isDisadvantage,
     isDamage: isDamage,
     isRecharge: isRecharge,
+    rechargeSuccess: rechargeSuccess,
     damageType: damageType || undefined,
     pendingDamageElements: pendingDamageElements,
     attackSource: attackSource,

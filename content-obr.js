@@ -109,8 +109,9 @@ function formatBeyond20Roll(roll) {
   const whisper = Boolean(roll && roll.whisper);
   const isAdvantage = Boolean(roll && roll.isAdvantage);
   const isDisadvantage = Boolean(roll && roll.isDisadvantage);
-  const isCrit = Boolean(roll && roll.isCrit);
-  const isFumble = Boolean(roll && roll.isFumble);
+  const isRecharge = Boolean(roll && roll.isRecharge);
+  const isCrit = isRecharge ? false : Boolean(roll && roll.isCrit);
+  const isFumble = isRecharge ? false : Boolean(roll && roll.isFumble);
   const isDamage = Boolean(roll && roll.isDamage);
   const isCondition = Boolean(roll && roll.isCondition);
   const hasCombinedDamages = Array.isArray(roll && roll.damages) && roll.damages.length > 0;
@@ -273,12 +274,13 @@ function buildTooltipBox(visibleHtml, formula, breakdown, inline = false, parts 
  */
 function buildBeyond20Html(roll) {
   const isCondition = Boolean(roll && roll.isCondition);
+  const isRecharge = Boolean(roll && roll.isRecharge);
   const isDamage = Boolean(roll && roll.isDamage);
   const total = (roll && roll.total !== undefined) ? roll.total : '';
   const formula = (roll && roll.formula) ? roll.formula : '';
   const breakdown = (roll && roll.breakdownText) ? roll.breakdownText : '';
-  const isCrit = Boolean(roll && roll.isCrit);
-  const isFumble = Boolean(roll && roll.isFumble);
+  const isCrit = isRecharge ? false : Boolean(roll && roll.isCrit);
+  const isFumble = isRecharge ? false : Boolean(roll && roll.isFumble);
   const damageType = (roll && roll.damageType) ? String(roll.damageType).trim() : '';
   const damageLabel = damageType || 'Damage';
   const isRedacted = !isCondition && ((roll && roll.sendDescriptions === false) || (roll && roll.description === '[REDACTED]'));
@@ -293,9 +295,17 @@ function buildBeyond20Html(roll) {
     }
   }
   const metaTableHtml = metaRows.length > 0 ? `<table>${metaRows.join('')}</table>` : '';
-  const descriptionHtml = (description || metaTableHtml)
-    ? `${metaTableHtml}${description ? `<div class="beyond20-description">${formatDescriptionHtml(description)}</div>` : ''}`
-    : '';
+  const redactedHtml = `<div class="beyond20-description" style="display:flex;flex-direction:column;gap:5px;margin-top:6px;padding:8px;border-radius:4px;background:rgba(0,0,0,0.2);">` +
+    `<div style="height:8px;width:92%;border-radius:2px;background:rgba(20,20,24,0.85);"></div>` +
+    `<div style="height:8px;width:76%;border-radius:2px;background:rgba(20,20,24,0.85);"></div>` +
+    `<div style="height:8px;width:54%;border-radius:2px;background:rgba(20,20,24,0.85);"></div>` +
+    `<span style="margin-top:2px;font-family:monospace;font-size:10px;letter-spacing:0.16em;text-transform:uppercase;opacity:0.65;">REDACTED</span>` +
+  `</div>`;
+  const descriptionHtml = isRedacted
+    ? redactedHtml
+    : ((description || metaTableHtml)
+      ? `${metaTableHtml}${description ? `<div class="beyond20-description">${formatDescriptionHtml(description)}</div>` : ''}`
+      : '');
 
   if (isCondition) {
     const condTitle = (roll && roll.title) ? String(roll.title) : 'Condition';
@@ -318,8 +328,10 @@ function buildBeyond20Html(roll) {
 
   if (isDamage) {
     // Compact Damage box with hover tooltip for formula & boxed die parts
-    const critClass = isCrit ? ' beyond20-critical-damage' : '';
-    const dmgBox = `<div class="beyond20-total-damage${critClass}">${escapeHtml(String(total))} ${escapeHtml(damageLabel)}</div>`;
+    const dmgDetailClass = isCrit
+      ? ' beyond20-roll-detail-crit'
+      : (isFumble ? ' beyond20-roll-detail-fail' : '');
+    const dmgBox = `<div class="beyond20-total-damage"><span class="beyond20-roll-total dice-total${dmgDetailClass}">${escapeHtml(String(total))} ${escapeHtml(damageLabel)}</span></div>`;
     rollBodyHtml = buildTooltipBox(dmgBox, formula, breakdown, false, roll && roll.parts);
   } else {
     // Compact To-Hit / D20 cells with hover tooltip for formula & breakdown
@@ -342,7 +354,15 @@ function buildBeyond20Html(roll) {
         detailClasses.push('beyond20-roll-total', 'dice-total');
       }
 
-      if (die.isCrit) {
+      if (isRecharge) {
+        if (roll.rechargeSuccess === true) {
+          detailClasses.push('beyond20-roll-detail-crit');
+        } else if (roll.rechargeSuccess === false) {
+          detailClasses.push('beyond20-roll-detail-fail');
+        } else {
+          detailClasses.push('beyond20-roll-detail-normal');
+        }
+      } else if (die.isCrit) {
         detailClasses.push('beyond20-roll-detail-crit');
       } else if (die.isFumble) {
         detailClasses.push('beyond20-roll-detail-fail');
@@ -352,7 +372,9 @@ function buildBeyond20Html(roll) {
 
       const dieValueSpan = `<span class="beyond20-roll-value ${detailClasses.join(' ')}">${escapeHtml(String(die.totalVal !== undefined ? die.totalVal : die.dieVal))}</span>`;
       const dieTooltipBreakdown = breakdown || (die.dieVal !== undefined ? `[${die.dieVal}]` : '');
-      cellsHtml += `<div class="beyond20-roll-cell">` +
+      // Use .beyond20-roll-die-result for Recharge so Owl20's `.beyond20-roll-cell .beyond20-roll-detail-crit:before` never injects "[CRIT] "
+      const cellClass = isRecharge ? 'beyond20-roll-die-result' : 'beyond20-roll-cell';
+      cellsHtml += `<div class="${cellClass}">` +
         buildTooltipBox(dieValueSpan, formula, dieTooltipBreakdown, false, roll && roll.parts) +
       `</div>`;
     });

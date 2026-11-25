@@ -14,6 +14,11 @@
     </div>
   </header>
 
+  <div class="target-room-row collapsed" id="target-room-row">
+    <label for="select-target-room" class="target-room-label">Target Room</label>
+    <select id="select-target-room" class="target-room-select"></select>
+  </div>
+
   <div class="toggle-group">
     <div class="toggle-row">
       <div class="toggle-info">
@@ -73,6 +78,21 @@
         <input type="checkbox" id="toggle-auto-roll-damage" checked>
         <span class="slider"></span>
       </label>
+    </div>
+  </div>
+
+  <div class="mirrors-section">
+    <button type="button" id="btn-expand-mirrors" class="mirrors-header" aria-expanded="false">
+      <span>Custom Mirrors</span>
+      <span id="mirrors-chevron">▸</span>
+    </button>
+    <div id="mirrors-body" class="mirrors-body collapsed">
+      <div class="mirrors-input-row">
+        <input type="text" id="input-mirror-url" class="mirrors-input" placeholder="https://my-5etools-mirror.com">
+        <button type="button" id="btn-add-mirror" class="mirrors-add-btn">Add</button>
+      </div>
+      <div id="mirror-status" class="mirrors-status collapsed"></div>
+      <ul id="mirror-list" class="mirrors-list"></ul>
     </div>
   </div>
 

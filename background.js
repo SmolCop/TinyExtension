@@ -1,4 +1,4 @@
-// [Tiny Extension] background.js - Service Worker
+// [Tiny Extension] background.js - Service Worker / Background Script
 const DEBUG = false;
 
 function log(...args) {
@@ -7,12 +7,184 @@ function log(...args) {
 
 log('Service worker initialized.');
 
+let memoryTargetObrTabId = null;
+
+function isOwlbearUrl(url) {
+  if (!url) return false;
+  return /^https:\/\/([^/]+\.)?owlbear\.rodeo(\/|$)/i.test(url);
+}
+
+function getTargetObrTabId(callback) {
+  if (chrome.storage && chrome.storage.session) {
+    chrome.storage.session.get({ targetObrTabId: null }, (res) => {
+      if (chrome.runtime.lastError) {
+        callback(memoryTargetObrTabId);
+        return;
+      }
+      callback(res && res.targetObrTabId ? res.targetObrTabId : null);
+    });
+    return;
+  }
+  callback(memoryTargetObrTabId);
+}
+
+function setTargetObrTabId(tabId, callback) {
+  memoryTargetObrTabId = tabId || null;
+  if (chrome.storage && chrome.storage.session) {
+    chrome.storage.session.set({ targetObrTabId: memoryTargetObrTabId }, () => {
+      if (callback) callback();
+    });
+    return;
+  }
+  if (callback) callback();
+}
+
+function selectBestObrTab(tabSummaries) {
+  if (!tabSummaries || tabSummaries.length === 0) return null;
+  const sorted = tabSummaries.slice().sort((a, b) => {
+    const gmDiff = (b.isGm ? 1 : 0) - (a.isGm ? 1 : 0);
+    if (gmDiff !== 0) return gmDiff;
+    const aIsRoom = (a.url || '').includes('/room/') ? 1 : 0;
+    const bIsRoom = (b.url || '').includes('/room/') ? 1 : 0;
+    if (bIsRoom !== aIsRoom) return bIsRoom - aIsRoom;
+    return (b.lastAccessed || 0) - (a.lastAccessed || 0);
+  });
+  return sorted[0];
+}
+
+function resolveObrTabsAndTarget(callback) {
+  queryOwlbearTabs((rawTabs) => {
+    if (!rawTabs || rawTabs.length === 0) {
+      setTargetObrTabId(null, () => {
+        callback({ tabs: [], targetObrTabId: null, targetTab: null });
+      });
+      return;
+    }
+
+    let completed = 0;
+    const summaries = new Array(rawTabs.length);
+
+    rawTabs.forEach((tab, idx) => {
+      pingObrTab(tab, (res) => {
+        summaries[idx] = {
+          id: tab.id,
+          title: tab.title || tab.url || `Room ${tab.id}`,
+          url: tab.url || '',
+          lastAccessed: tab.lastAccessed || 0,
+          isGm: Boolean(res && res.isGm === true)
+        };
+        completed++;
+
+        if (completed === rawTabs.length) {
+          getTargetObrTabId((savedId) => {
+            let targetTab = savedId ? summaries.find((t) => t.id === savedId) : null;
+            if (!targetTab) {
+              targetTab = selectBestObrTab(summaries);
+              setTargetObrTabId(targetTab ? targetTab.id : null, () => {
+                callback({
+                  tabs: summaries,
+                  targetObrTabId: targetTab ? targetTab.id : null,
+                  targetTab: targetTab
+                });
+              });
+            } else {
+              callback({
+                tabs: summaries,
+                targetObrTabId: targetTab.id,
+                targetTab: targetTab
+              });
+            }
+          });
+        }
+      });
+    });
+  });
+}
+
+function setBadge(text, color) {
+  if (!chrome.action || !chrome.action.setBadgeText) return;
+  chrome.action.setBadgeText({ text: text });
+  if (text && color && chrome.action.setBadgeBackgroundColor) {
+    chrome.action.setBadgeBackgroundColor({ color: color });
+  }
+  if (text && chrome.action.setBadgeTextColor) {
+    chrome.action.setBadgeTextColor({ color: '#ffffff' });
+  }
+}
+
+function updateBadgeFromState(bridgeEnabled, targetTab, tabs) {
+  if (!bridgeEnabled) {
+    setBadge('OFF', '#6b7280');
+    return;
+  }
+  if (!tabs || tabs.length === 0) {
+    setBadge('', '');
+    return;
+  }
+  const isGm = targetTab ? Boolean(targetTab.isGm) : tabs.some((t) => t.isGm);
+  if (isGm) {
+    setBadge('GM', '#16a34a');
+  } else {
+    setBadge('PLR', '#d97706');
+  }
+}
+
+function updateBadge() {
+  chrome.storage.local.get({ bridgeEnabled: true }, (settings) => {
+    if (!settings.bridgeEnabled) {
+      setBadge('OFF', '#6b7280');
+      return;
+    }
+    resolveObrTabsAndTarget(({ tabs, targetTab }) => {
+      updateBadgeFromState(true, targetTab, tabs);
+    });
+  });
+}
+
+function getMirrorScriptId(pattern) {
+  return 'tiny-ext-mirror-' + String(pattern).replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+function syncCustomMirrorsOnStartup() {
+  if (!chrome.scripting || !chrome.scripting.registerContentScripts) return;
+  chrome.storage.local.get({ customMirrors: [] }, (res) => {
+    const mirrors = Array.isArray(res.customMirrors) ? res.customMirrors : [];
+    if (mirrors.length === 0) return;
+
+    chrome.scripting.getRegisteredContentScripts((existing) => {
+      const existingIds = new Set((existing || []).map((s) => s.id));
+      const toRegister = [];
+      mirrors.forEach((pattern) => {
+        const id = getMirrorScriptId(pattern);
+        if (!existingIds.has(id)) {
+          toRegister.push({
+            id: id,
+            matches: [pattern],
+            js: ['statblock-reader.js', 'content-5etools.js'],
+            runAt: 'document_end',
+            persistAcrossSessions: true
+          });
+        }
+      });
+
+      if (toRegister.length > 0) {
+        chrome.scripting.registerContentScripts(toRegister, () => {
+          if (chrome.runtime.lastError) {
+            log('Mirror sync error:', chrome.runtime.lastError.message);
+          }
+        });
+      }
+    });
+  });
+}
+
 /**
  * Determine a clean generic label for a roll when showActionName is false:
- * - Attack / To-Hit rolls -> "Attack"
+ * - Recharge rolls -> "Recharge"
  * - Damage rolls -> "Damage"
  * - Saving throws -> "Saving Throw"
  * - Ability / Skill checks -> "Check"
+ * - Attack / To-Hit rolls -> "Attack"
  * - Anything else -> "Roll"
  */
 function getGenericActionName(roll) {
@@ -61,27 +233,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   log(`Background received "${message.action}" from ${senderInfo}:`, message);
 
   if (message.action === 'CHECK_OBR_TAB') {
-    queryOwlbearTabs((tabs) => {
-      if (!tabs || tabs.length === 0) {
-        sendResponse({ hasObrTab: false, count: 0, isGm: false });
-        return;
-      }
-
-      let completed = 0;
-      let anyGm = false;
-      tabs.forEach((tab) => {
-        pingObrTab(tab, (res) => {
-          completed++;
-          if (res && res.isGm === true) {
-            anyGm = true;
-          }
-          if (completed === tabs.length) {
-            sendResponse({ hasObrTab: true, count: tabs.length, isGm: anyGm });
-          }
+    chrome.storage.local.get({ bridgeEnabled: true }, (settings) => {
+      resolveObrTabsAndTarget(({ tabs, targetObrTabId, targetTab }) => {
+        updateBadgeFromState(Boolean(settings.bridgeEnabled), targetTab, tabs);
+        const anyGm = targetTab ? Boolean(targetTab.isGm) : tabs.some((t) => t.isGm);
+        sendResponse({
+          hasObrTab: tabs.length > 0,
+          count: tabs.length,
+          isGm: anyGm,
+          tabs: tabs.map((t) => ({ id: t.id, title: t.title, isGm: t.isGm })),
+          targetObrTabId: targetObrTabId
         });
       });
     });
-    return true; // Keep message channel open for async response
+    return true;
+  }
+
+  if (message.action === 'SET_TARGET_OBR_TAB') {
+    const nextTabId = Number(message.tabId) || null;
+    setTargetObrTabId(nextTabId, () => {
+      updateBadge();
+      sendResponse({ success: true, targetObrTabId: nextTabId });
+    });
+    return true;
   }
 
   if (message.action === 'SEND_ROLL') {
@@ -128,8 +302,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
       log('Processing roll to forward:', rollPayload);
 
-      queryOwlbearTabs((tabs) => {
-        if (!tabs || tabs.length === 0) {
+      resolveObrTabsAndTarget(({ tabs, targetTab }) => {
+        if (!tabs || tabs.length === 0 || !targetTab) {
           log('No Owlbear Rodeo tab found.');
           sendResponse({
             success: false,
@@ -138,40 +312,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         }
 
-        log(`Forwarding roll to ${tabs.length} Owlbear Rodeo tab(s)...`);
-        let completed = 0;
-        let successCount = 0;
-        const errors = [];
-
-        tabs.forEach((tab) => {
-          sendRollToTab(tab, rollPayload, (ok, err) => {
-            completed++;
-            if (ok) {
-              successCount++;
-            } else if (err) {
-              errors.push(err);
-            }
-
-            if (completed === tabs.length) {
-              sendResponse({
-                success: successCount > 0,
-                successCount,
-                totalTabs: tabs.length,
-                errors: errors.length > 0 ? errors : undefined
-              });
-            }
+        log(`Forwarding roll to single target Owlbear Rodeo tab ${targetTab.id}...`);
+        sendRollToTab(targetTab, rollPayload, (ok, err) => {
+          sendResponse({
+            success: ok,
+            successCount: ok ? 1 : 0,
+            targetTabId: targetTab.id,
+            errors: err ? [err] : undefined
           });
         });
       });
     });
-    return true; // Keep message channel open for async response
+    return true;
   }
 
   return false;
 });
 
 /**
- * Sends roll message to a tab, with automatic content script injection fallback
+ * Sends roll message to a single target tab, with automatic content script injection fallback
  * if the content script was not yet loaded (e.g. after extension reload without page refresh)
  */
 function sendRollToTab(tab, rollPayload, callback) {
@@ -183,7 +342,6 @@ function sendRollToTab(tab, rollPayload, callback) {
       const errMsg = chrome.runtime.lastError.message || '';
       log(`Initial dispatch to tab ${tab.id} (${tab.url}) failed: ${errMsg}`);
 
-      // If the content script is missing on the tab, dynamically inject it and retry
       if (errMsg.includes('Receiving end does not exist') || errMsg.includes('Could not establish connection')) {
         log(`content-obr.js missing on tab ${tab.id}. Auto-injecting content script via chrome.scripting...`);
         chrome.scripting.executeScript({
@@ -198,7 +356,6 @@ function sendRollToTab(tab, rollPayload, callback) {
           }
 
           log(`Successfully injected content-obr.js into tab ${tab.id}. Retrying roll dispatch...`);
-          // Brief pause to allow content script event listeners to register
           setTimeout(() => {
             chrome.tabs.sendMessage(tab.id, {
               action: 'DISPATCH_ROLL',
@@ -269,12 +426,47 @@ function queryOwlbearTabs(callback) {
       return;
     }
     const matchingTabs = tabs || [];
-    // Prioritize room tabs (/room/ or /game/) if present
     matchingTabs.sort((a, b) => {
       const aIsRoom = (a.url || '').includes('/room/') ? 1 : 0;
       const bIsRoom = (b.url || '').includes('/room/') ? 1 : 0;
-      return bIsRoom - aIsRoom;
+      if (bIsRoom !== aIsRoom) return bIsRoom - aIsRoom;
+      return (b.lastAccessed || 0) - (a.lastAccessed || 0);
     });
     callback(matchingTabs);
   });
 }
+
+// Badge & lifecycle listeners
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === 'local' && changes.bridgeEnabled) {
+    updateBadge();
+  }
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if ((changeInfo.status === 'complete' || changeInfo.url) && tab && isOwlbearUrl(tab.url)) {
+    updateBadge();
+  }
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  getTargetObrTabId((savedId) => {
+    if (savedId === tabId) {
+      setTargetObrTabId(null, () => updateBadge());
+    } else {
+      updateBadge();
+    }
+  });
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  updateBadge();
+  syncCustomMirrorsOnStartup();
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  updateBadge();
+  syncCustomMirrorsOnStartup();
+});
+
+updateBadge();

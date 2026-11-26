@@ -3,7 +3,7 @@
 ## What It Does
 Think of **Tiny Extension** like a tiny invisible messenger running between your **5etools** tab and your **Owlbear Rodeo** tab. Whenever you click a dice roll on a monster statblock in 5etools, this messenger grabs the result and drops it straight into Owlbear Rodeo's Owl20 dice log—so your players see your rolls automatically without you having to type anything or switch tabs.
 
-**Supported Browsers:** Chrome, Vivaldi, Brave, Edge, and Firefox (121+).
+**Supported Browsers:** Chrome, Vivaldi, Brave, and Edge.
 
 ---
 
